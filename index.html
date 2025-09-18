@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Emploi du temps des salles de musique</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { text-align: center; }
+    .toolbar { margin-bottom: 10px; text-align: center; }
+    button { margin: 5px; padding: 8px 12px; cursor: pointer; }
+    table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+    th, td { border: 1px solid #ccc; text-align: center; font-size: 12px; position: relative; height: 40px; }
+    th { background: #f0f0f0; }
+    .time-col { width: 60px; }
+    td { position: relative; overflow: visible; }
+
+    .event { 
+      position: absolute; 
+      top: 0;
+      border-radius: 6px; 
+      color: white; 
+      padding: 4px; 
+      font-size: 14px; 
+      cursor: move; 
+      overflow: hidden;
+      display: flex; 
+      flex-direction: column;
+      justify-content: center; 
+      align-items: center;
+      text-align: center;
+      line-height: 1.2;
+      box-sizing: border-box;
+    }
+    .event .prof {
+      font-weight: bold;
+      font-size: 15px;
+      white-space: nowrap;
+    }
+    .event .discipline {
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .resize-handle {
+      position: absolute; bottom: 0; left: 0; right: 0; height: 5px;
+      background: rgba(0,0,0,0.2); cursor: ns-resize;
+    }
+    .more-badge {
+      position: absolute;
+      bottom: 2px;
+      right: 2px;
+      font-size: 10px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      padding: 2px 4px;
+      border-radius: 4px;
+      z-index: 50;
+    }
+
+    /* Légende */
+    .legend { 
+      display: flex; 
+      flex-wrap: wrap; 
+      margin-top: 20px; 
+      gap: 10px; 
+    }
+    .legend div { 
+      display: flex; 
+      align-items: center; 
+      font-size: 14px; 
+    }
+    .box {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      width: 20px; 
+      height: 20px;
+      margin-right: 5px;
+      border-radius: 4px;
+      color: white;
+      font-weight: bold;
+      font-size: 12px;
+    }
+
+    .salle-1 { background:#1abc9c; }
+    .salle-2 { background:#3498db; }
+    .salle-3 { background:#9b59b6; }
+    .salle-4 { background:#e67e22; }
+    .salle-5 { background:#e74c3c; }
+    .salle-6 { background:#2ecc71; }
+    .salle-7 { background:#f1c40f; color:black; }
+    .salle-8 { background:#34495e; }
+
+    /* Mode sombre */
+    body.dark { background: #222; color: #eee; }
+    body.dark table, body.dark th, body.dark td { border-color: #555; }
+    body.dark th { background: #333; }
+    body.dark .event { color: #fff; }
+    body.dark .salle-7 { color: black; }
+
+    @media print {
+      body { margin: 0; background: white; color: black; }
+      .toolbar { display: none; }
+      table { font-size: 11px; }
+      th, td { border: 1px solid #000; height: 60px; }
+      .event {
+        font-size: 14px !important;
+        min-height: 30px !important;
+      }
+    }
+
+    body.print-a3 @page { size: A3 landscape; margin: 10mm; }
+    body.print-a4 @page { size: A4 landscape; margin: 10mm; }
+  </style>
+</head>
+<body>
+  <h1>Emploi du temps des salles de musique</h1>
+  <div class="toolbar">
+    <button onclick="toggleDarkMode()">🌙 Mode sombre</button>
+    <button onclick="saveSchedule()">💾 Sauvegarder</button>
+    <button onclick="loadSchedule()">📂 Recharger</button>
+    <button onclick="clearSchedule()">🗑️ Vider</button>
+    <button onclick="exportSchedule()">⬇️ Exporter</button>
+    <input type="file" id="importFile" style="display:none" onchange="importSchedule(event)">
+    <button onclick="document.getElementById('importFile').click()">⬆️ Importer</button>
+    <button onclick="setPrintFormat('a3')">📄 A3 paysage</button>
+    <button onclick="setPrintFormat('a4')">📄 A4 paysage</button>
+    <button onclick="window.print()">🖨️ Imprimer</button>
+  </div>
+  <table id="schedule">
+    <thead>
+      <tr>
+        <th class="time-col">Heure</th>
+        <th>Lundi</th><th>Mardi</th><th>Mercredi</th>
+        <th>Jeudi</th><th>Vendredi</th><th>Samedi</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div class="legend">
+    <div><span class="salle-1 box">1</span> Batterie</div>
+    <div><span class="salle-2 box">2</span> Ensemble</div>
+    <div><span class="salle-3 box">3</span> Piano</div>
+    <div><span class="salle-4 box">4</span> Petite</div>
+    <div><span class="salle-5 box">5</span> FM</div>
+    <div><span class="salle-6 box">6</span> Piano bis</div>
+    <div><span class="salle-7 box">7</span> Guitare</div>
+    <div><span class="salle-8 box">8</span> MAO</div>
+  </div>
+
+  <script>
+    const days = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi"];
+    const startHour = 8, endHour = 21, slotMinutes = 30;
+    const tbody = document.querySelector("#schedule tbody");
+
+    for(let h=startHour; h<endHour; h++){
+      for(let m=0; m<60; m+=slotMinutes){
+        const row = document.createElement("tr");
+        const timeCell = document.createElement("td");
+        timeCell.textContent = h.toString().padStart(2,"0")+":"+m.toString().padStart(2,"0");
+        row.appendChild(timeCell);
+        for(let d=0; d<days.length; d++){
+          const cell = document.createElement("td");
+          cell.dataset.day = d;
+          cell.dataset.time = h*60+m;
+          cell.addEventListener("dblclick", addEvent);
+          row.appendChild(cell);
+        }
+        tbody.appendChild(row);
+      }
+    }
+
+    let events = [
+      {prof: "Dupont", discipline: "Piano", salle: 3, day: 0, start: 8*60, duration: 2},
+      {prof: "Martin", discipline: "Guitare", salle: 7, day: 2, start: 10*60+30, duration: 3},
+      {prof: "Durand", discipline: "FM", salle: 5, day: 4, start: 14*60, duration: 4},
+      {prof: "Lefevre", discipline: "Batterie", salle: 1, day: 5, start: 9*60, duration: 2}
+    ];
+
+    function addEvent(e){
+      const cell = e.currentTarget;
+      const day = parseInt(cell.dataset.day);
+      const start = parseInt(cell.dataset.time);
+
+      let prof = prompt("Nom du prof:");
+      if(!prof) return;
+      let discipline = prompt("Discipline:");
+      if(!discipline) return;
+
+      let salleOptions = [
+        "Salle 1 - Batterie","Salle 2 - Ensemble","Salle 3 - Piano","Salle 4 - Petite",
+        "Salle 5 - FM","Salle 6 - Piano bis","Salle 7 - Guitare","Salle 8 - MAO"
+      ];
+      let salle = prompt("Choisis une salle:\n" + salleOptions.join("\n"), "Salle 1 - Batterie");
+      if(!salle) return;
+
+      let salleIndex = parseInt((salle.match(/\d+/)||[])[0]);
+      if(isNaN(salleIndex) || salleIndex < 1 || salleIndex > 8) salleIndex = 1;
+
+      let duration = parseInt(prompt("Durée (nombre de créneaux de 30 min):","2"));
+      if(!duration || duration<1) duration=1;
+
+      let ev = {prof, discipline, salle: salleIndex, day, start, duration};
+      events.push(ev);
+      renderEvents();
+      saveLocal();
+    }
+
+    function renderEvents(){
+      // remove previous rendered items
+      document.querySelectorAll(".event, .more-badge").forEach(el=>el.remove());
+
+      // group events by cell (day-start)
+      const cellMap = {};
+      for(const ev of events){
+        const key = ev.day + "-" + ev.start;
+        if(!cellMap[key]) cellMap[key] = [];
+        cellMap[key].push(ev);
+      }
+
+      // render groups
+      for(const key in cellMap){
+        const group = cellMap[key];
+        const day = group[0].day;
+        const start = group[0].start;
+        const cell = document.querySelector("td[data-day='"+day+"'][data-time='"+start+"']");
+        if(!cell) continue;
+
+        // display up to 7 events side-by-side
+        const visibleEvents = group.slice(0,7);
+        const n = visibleEvents.length;
+
+        visibleEvents.forEach((ev, idx)=>{
+          const div = document.createElement("div");
+          div.className = "event salle-"+ev.salle;
+
+          const profLine = document.createElement("div");
+          profLine.className = "prof";
+          profLine.textContent = ev.prof;
+          const disciplineLine = document.createElement("div");
+          disciplineLine.className = "discipline";
+          disciplineLine.textContent = ev.discipline;
+          div.appendChild(profLine);
+          div.appendChild(disciplineLine);
+
+          div.style.height = (40*ev.duration) + "px";
+          div.style.top = "0px";
+          div.style.zIndex = 10 + idx;
+          div.draggable = true;
+
+          const width = 100 / n;
+          div.style.width = width + "%";
+          div.style.left = (idx * width) + "%";
+
+          div.addEventListener("click", ()=>editEvent(ev));
+          div.addEventListener("dragstart", dragStart);
+          div.addEventListener("dragend", dragEnd);
+
+          const resize = document.createElement("div");
+          resize.className = "resize-handle";
+          resize.addEventListener("mousedown", (e)=>initResize(e, ev));
+          div.appendChild(resize);
+
+          cell.appendChild(div);
+        });
+
+        if(group.length > 7){
+          const more = document.createElement("div");
+          more.className = "more-badge";
+          more.textContent = "+" + (group.length - 7);
+          cell.appendChild(more);
+        }
+      }
+    }
+
+    function editEvent(ev){
+      let action = prompt("Modifier ou Supprimer ? (m/s)");
+      if(action==="s"){
+        events = events.filter(e=>e!==ev);
+      } else if(action==="m"){
+        let prof = prompt("Nom du prof:", ev.prof);
+        if(prof) ev.prof=prof;
+        let discipline = prompt("Discipline:", ev.discipline);
+        if(discipline) ev.discipline=discipline;
+        let salle = prompt("Salle (numéro 1-8):", ev.salle);
+        let salleIndex = parseInt((salle.match(/\d+/)||[])[0]);
+        if(!isNaN(salleIndex) && salleIndex>=1 && salleIndex<=8) ev.salle = salleIndex;
+        let duration = parseInt(prompt("Durée (créneaux de 30min):", ev.duration));
+        if(duration && duration>0) ev.duration=duration;
+      }
+      renderEvents();
+      saveLocal();
+    }
+
+    let dragEvent=null;
+    function dragStart(e){
+      // find event by prof text contained in the dragged target (best-effort)
+      const profText = e.target.closest(".event")?.querySelector(".prof")?.textContent;
+      dragEvent = events.find(ev => ev.prof === profText);
+    }
+    function dragEnd(e){
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const cell = el ? el.closest("td") : null;
+      if(cell && cell.dataset && cell.dataset.day!==undefined){
+        dragEvent.day = parseInt(cell.dataset.day);
+        dragEvent.start = parseInt(cell.dataset.time);
+        renderEvents();
+        saveLocal();
+      }
+      dragEvent=null;
+    }
+
+    let resizingEvent=null, startY, startHeight;
+    function initResize(e, ev){
+      e.preventDefault();
+      resizingEvent=ev; startY=e.clientY; startHeight=ev.duration;
+      document.addEventListener("mousemove", doResize);
+      document.addEventListener("mouseup", stopResize);
+    }
+    function doResize(e){
+      if(!resizingEvent) return;
+      let diff = Math.round((e.clientY-startY)/40);
+      resizingEvent.duration=Math.max(1, startHeight+diff);
+      renderEvents();
+    }
+    function stopResize(){
+      document.removeEventListener("mousemove", doResize);
+      document.removeEventListener("mouseup", stopResize);
+      saveLocal();
+      resizingEvent=null;
+    }
+
+    function saveLocal(){ localStorage.setItem("schedule", JSON.stringify(events)); }
+    function loadLocal(){ let data=localStorage.getItem("schedule"); if(data) events=JSON.parse(data); renderEvents(); }
+
+    function saveSchedule(){ alert("Emploi du temps sauvegardé dans le navigateur."); saveLocal(); }
+    function loadSchedule(){ loadLocal(); }
+    function clearSchedule(){ if(confirm("Tout effacer ?")){ events=[]; renderEvents(); saveLocal(); } }
+
+    function exportSchedule(){
+      const blob = new Blob([JSON.stringify(events)], {type:"application/json"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "emploi_du_temps.json";
+      a.click();
+    }
+    function importSchedule(e){
+      const file = e.target.files[0];
+      if(!file) return;
+      const reader = new FileReader();
+      reader.onload = function(){
+        events = JSON.parse(reader.result);
+        renderEvents();
+        saveLocal();
+      }
+      reader.readAsText(file);
+    }
+
+    function toggleDarkMode(){
+      document.body.classList.toggle("dark");
+      localStorage.setItem("darkmode", document.body.classList.contains("dark") ? "1":"0");
+    }
+
+    function setPrintFormat(format){
+      document.body.classList.remove("print-a3","print-a4");
+      document.body.classList.add("print-"+format);
+      alert("Format d'impression défini en " + format.toUpperCase() + " paysage");
+    }
+
+    if(localStorage.getItem("darkmode")==="1"){ document.body.classList.add("dark"); }
+
+    renderEvents();
+  </script>
+</body>
+</html>
