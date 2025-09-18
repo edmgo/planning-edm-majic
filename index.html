@@ -12,7 +12,7 @@
     th, td { border: 1px solid #ccc; text-align: center; font-size: 12px; position: relative; height: 40px; }
     th { background: #f0f0f0; }
     .time-col { width: 60px; }
-    td { position: relative; overflow: visible; }
+    td { position: relative; }
 
     .event { 
       position: absolute; 
@@ -29,7 +29,6 @@
       align-items: center;
       text-align: center;
       line-height: 1.2;
-      box-sizing: border-box;
     }
     .event .prof {
       font-weight: bold;
@@ -53,7 +52,42 @@
       color: white;
       padding: 2px 4px;
       border-radius: 4px;
-      z-index: 50;
+      cursor: pointer;
+    }
+
+    /* Modal */
+    .modal {
+      display: none; 
+      position: fixed; 
+      z-index: 1000; 
+      left: 0; 
+      top: 0; 
+      width: 100%; 
+      height: 100%; 
+      background: rgba(0,0,0,0.5); 
+    }
+    .modal-content {
+      background: white;
+      margin: 10% auto;
+      padding: 20px;
+      border-radius: 10px;
+      width: 300px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    }
+    .modal-content h3 {
+      margin-top: 0;
+    }
+    .modal-content ul {
+      list-style: none;
+      padding: 0;
+    }
+    .modal-content li {
+      margin: 5px 0;
+    }
+    .close {
+      float: right;
+      font-size: 20px;
+      cursor: pointer;
     }
 
     /* Légende */
@@ -148,6 +182,15 @@
     <div><span class="salle-8 box">8</span> MAO</div>
   </div>
 
+  <!-- Modal -->
+  <div id="modal" class="modal">
+    <div class="modal-content">
+      <span class="close">&times;</span>
+      <h3>Cours supplémentaires</h3>
+      <ul id="modal-list"></ul>
+    </div>
+  </div>
+
   <script>
     const days = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi"];
     const startHour = 8, endHour = 21, slotMinutes = 30;
@@ -170,12 +213,7 @@
       }
     }
 
-    let events = [
-      {prof: "Dupont", discipline: "Piano", salle: 3, day: 0, start: 8*60, duration: 2},
-      {prof: "Martin", discipline: "Guitare", salle: 7, day: 2, start: 10*60+30, duration: 3},
-      {prof: "Durand", discipline: "FM", salle: 5, day: 4, start: 14*60, duration: 4},
-      {prof: "Lefevre", discipline: "Batterie", salle: 1, day: 5, start: 9*60, duration: 2}
-    ];
+    let events = [];
 
     function addEvent(e){
       const cell = e.currentTarget;
@@ -194,7 +232,7 @@
       let salle = prompt("Choisis une salle:\n" + salleOptions.join("\n"), "Salle 1 - Batterie");
       if(!salle) return;
 
-      let salleIndex = parseInt((salle.match(/\d+/)||[])[0]);
+      let salleIndex = parseInt(salle.match(/\d+/));
       if(isNaN(salleIndex) || salleIndex < 1 || salleIndex > 8) salleIndex = 1;
 
       let duration = parseInt(prompt("Durée (nombre de créneaux de 30 min):","2"));
@@ -203,32 +241,26 @@
       let ev = {prof, discipline, salle: salleIndex, day, start, duration};
       events.push(ev);
       renderEvents();
-      saveLocal();
     }
 
     function renderEvents(){
-      // remove previous rendered items
-      document.querySelectorAll(".event, .more-badge").forEach(el=>el.remove());
+      document.querySelectorAll(".event").forEach(el=>el.remove());
+      document.querySelectorAll(".more-badge").forEach(el=>el.remove());
 
-      // group events by cell (day-start)
-      const cellMap = {};
-      for(const ev of events){
-        const key = ev.day + "-" + ev.start;
+      let cellMap = {};
+      for(let ev of events){
+        let key = ev.day+"-"+ev.start;
         if(!cellMap[key]) cellMap[key] = [];
         cellMap[key].push(ev);
       }
 
-      // render groups
-      for(const key in cellMap){
-        const group = cellMap[key];
-        const day = group[0].day;
-        const start = group[0].start;
-        const cell = document.querySelector("td[data-day='"+day+"'][data-time='"+start+"']");
+      for(let key in cellMap){
+        let group = cellMap[key];
+        let selector = "td[data-day='"+group[0].day+"'][data-time='"+group[0].start+"']";
+        const cell = document.querySelector(selector);
         if(!cell) continue;
 
-        // display up to 7 events side-by-side
-        const visibleEvents = group.slice(0,7);
-        const n = visibleEvents.length;
+        let visibleEvents = group.slice(0,7);
 
         visibleEvents.forEach((ev, idx)=>{
           const div = document.createElement("div");
@@ -243,20 +275,20 @@
           div.appendChild(profLine);
           div.appendChild(disciplineLine);
 
-          div.style.height = (40*ev.duration) + "px";
-          div.style.top = "0px";
-          div.style.zIndex = 10 + idx;
+          div.style.height = (40*ev.duration)+"px";
+          div.style.top = "0";
+          div.style.zIndex = 10;
           div.draggable = true;
 
-          const width = 100 / n;
-          div.style.width = width + "%";
-          div.style.left = (idx * width) + "%";
+          let width = 100 / visibleEvents.length;
+          div.style.width = width+"%";
+          div.style.left = (idx * width)+"%";
 
           div.addEventListener("click", ()=>editEvent(ev));
           div.addEventListener("dragstart", dragStart);
           div.addEventListener("dragend", dragEnd);
 
-          const resize = document.createElement("div");
+          let resize = document.createElement("div");
           resize.className = "resize-handle";
           resize.addEventListener("mousedown", (e)=>initResize(e, ev));
           div.appendChild(resize);
@@ -267,10 +299,23 @@
         if(group.length > 7){
           const more = document.createElement("div");
           more.className = "more-badge";
-          more.textContent = "+" + (group.length - 7);
+          more.textContent = "+"+(group.length-7);
+          more.addEventListener("click", () => {
+            let hidden = group.slice(7);
+            let list = document.getElementById("modal-list");
+            list.innerHTML = "";
+            hidden.forEach(ev => {
+              let li = document.createElement("li");
+              li.textContent = ev.prof + " – " + ev.discipline + " (Salle " + ev.salle + ")";
+              list.appendChild(li);
+            });
+            document.getElementById("modal").style.display = "block";
+          });
           cell.appendChild(more);
         }
       }
+
+      saveLocal();
     }
 
     function editEvent(ev){
@@ -283,29 +328,24 @@
         let discipline = prompt("Discipline:", ev.discipline);
         if(discipline) ev.discipline=discipline;
         let salle = prompt("Salle (numéro 1-8):", ev.salle);
-        let salleIndex = parseInt((salle.match(/\d+/)||[])[0]);
+        let salleIndex = parseInt(salle.match(/\d+/));
         if(!isNaN(salleIndex) && salleIndex>=1 && salleIndex<=8) ev.salle = salleIndex;
         let duration = parseInt(prompt("Durée (créneaux de 30min):", ev.duration));
         if(duration && duration>0) ev.duration=duration;
       }
       renderEvents();
-      saveLocal();
     }
 
     let dragEvent=null;
     function dragStart(e){
-      // find event by prof text contained in the dragged target (best-effort)
-      const profText = e.target.closest(".event")?.querySelector(".prof")?.textContent;
-      dragEvent = events.find(ev => ev.prof === profText);
+      dragEvent = events.find(ev => e.target.querySelector(".prof")?.textContent === ev.prof);
     }
     function dragEnd(e){
-      const el = document.elementFromPoint(e.clientX, e.clientY);
-      const cell = el ? el.closest("td") : null;
-      if(cell && cell.dataset && cell.dataset.day!==undefined){
-        dragEvent.day = parseInt(cell.dataset.day);
-        dragEvent.start = parseInt(cell.dataset.time);
+      const cell = document.elementFromPoint(e.clientX, e.clientY).closest("td");
+      if(cell && cell.dataset.day!==undefined){
+        dragEvent.day=parseInt(cell.dataset.day);
+        dragEvent.start=parseInt(cell.dataset.time);
         renderEvents();
-        saveLocal();
       }
       dragEvent=null;
     }
@@ -326,7 +366,6 @@
     function stopResize(){
       document.removeEventListener("mousemove", doResize);
       document.removeEventListener("mouseup", stopResize);
-      saveLocal();
       resizingEvent=null;
     }
 
@@ -351,7 +390,6 @@
       reader.onload = function(){
         events = JSON.parse(reader.result);
         renderEvents();
-        saveLocal();
       }
       reader.readAsText(file);
     }
@@ -367,9 +405,18 @@
       alert("Format d'impression défini en " + format.toUpperCase() + " paysage");
     }
 
-    if(localStorage.getItem("darkmode")==="1"){ document.body.classList.add("dark"); }
+    // Gestion du modal
+    document.querySelector(".close").onclick = function() {
+      document.getElementById("modal").style.display = "none";
+    };
+    window.onclick = function(event) {
+      if (event.target == document.getElementById("modal")) {
+        document.getElementById("modal").style.display = "none";
+      }
+    };
 
-    renderEvents();
+    if(localStorage.getItem("darkmode")==="1"){ document.body.classList.add("dark"); }
+    loadLocal();
   </script>
 </body>
 </html>
